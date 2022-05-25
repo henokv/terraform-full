@@ -1,0 +1,80 @@
+name: 'Terraform'
+description: 'Runs terraform plan & apply'
+inputs:
+  terraform_version:
+    description: 'Terraform version'
+    required: true
+    default: '<2.0.0'
+  release_branch:
+    description: 'Branch on which terraform apply runs'
+    required: true
+    default: 'main'
+runs:
+  using: "composite"
+  steps:
+  - name: Checkout
+    uses: actions/checkout@v3
+    
+  - uses: hashicorp/setup-terraform@v2
+    id: install
+    name: Install specified Terraform version
+    with:
+      terraform_version: ${{ inputs.terraform_version }}
+
+  - name: Terraform Format
+    id: fmt
+    run: terraform fmt -check
+
+  - name: Terraform Init
+    id: init
+    run: terraform init
+
+  - name: Terraform Validate
+    id: validate
+    run: terraform validate -no-color
+
+  - name: Terraform Plan
+    id: plan
+    if: github.event_name == 'pull_request'
+    run: terraform plan -input=false -out="plan.out" -no-color 
+    continue-on-error: true
+
+  - name: Upload tf plan as artifact
+    id: upload
+    uses: actions/upload-artifact@v3.1.0
+    with:
+      name: tf-plan
+      path: plan.out
+
+  - uses: actions/github-script@v6
+    id: comment
+    if: github.event_name == 'pull_request'
+    env:
+      PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
+    with:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+      script: |
+        const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+        #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+        #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+        #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+        <details><summary>Show Plan</summary>
+        \`\`\`\n
+        ${process.env.PLAN}
+        \`\`\`
+        </details>
+        *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+        github.rest.issues.createComment({
+          issue_number: context.issue.number,
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          body: output
+        })
+  - name: Terraform Plan Status
+    if: steps.plan.outcome == 'failure'
+    run: exit 1
+
+  - name: Terraform Apply
+    id: apply
+    if: github.ref == 'refs/heads/${{ inputs.release_branch }}' && github.event_name == 'push'
+    run: terraform apply -auto-approve -input=false
