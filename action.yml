@@ -23,19 +23,23 @@ runs:
 
   - name: Terraform Format
     id: fmt
+    shell: bash
     run: terraform fmt -check
 
   - name: Terraform Init
     id: init
+    shell: bash
     run: terraform init
 
   - name: Terraform Validate
     id: validate
+    shell: bash
     run: terraform validate -no-color
 
   - name: Terraform Plan
     id: plan
     if: github.event_name == 'pull_request'
+    shell: bash
     run: terraform plan -input=false -out="plan.out" -no-color 
     continue-on-error: true
 
@@ -71,9 +75,11 @@ runs:
         })
   - name: Terraform Plan Status
     if: steps.plan.outcome == 'failure'
+    shell: bash
     run: exit 1
 
   - name: Terraform Apply
     id: apply
+    shell: bash
     if: github.ref == 'refs/heads/${{ inputs.release_branch }}' && github.event_name == 'push'
     run: terraform apply -auto-approve -input=false
